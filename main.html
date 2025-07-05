@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The history of everything</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<h1>The history of everything</h1>
+<p>Click on the map to get the coordinates.</p>
+<div class="sidebar" id="sidebar_container">
+    <input type="text" id="coordinates_input" class="input_field">
+    <button id="submit_btn">Submit</button>
+</div>
+<div class="main">
+    <div id="map"></div>
+</div>
+
+<script type="module" src="fetch.js"></script>
+<script>
+const radius = 10; // Radius in meters
+function submit_date(latitude, longitude) {
+    
+    if (latitude !== undefined && latitude !== null && latitude !== '' &&
+        longitude !== undefined && longitude !== null && longitude !== '') {
+        latitude = parseFloat(latitude);
+        longitude = parseFloat(longitude);
+    var query = `
+    SELECT ?event ?eventLabel ?eventDescription ?date ?coords ?eventTypeLabel ?image WHERE {
+
+    # =================================================================
+    # == CONFIGURATIE ==
+    BIND("Point(${latitude} ${longitude})"^^geo:wktLiteral AS ?center_point)
+    # Radius is a string
+    BIND("${radius}" AS ?radius)
+    # =================================================================
+
+    # Define the event types we are interested in.
+    VALUES ?eventType {
+        wd:Q178561 wd:Q3839081 wd:Q16510064 wd:Q40231 wd:Q189913 
+        wd:Q1323136 wd:Q387526 wd:Q19830275 wd:Q1190554
+    }
+
+    # We now ONLY use the direct search. No UNION, no subqueries.
+    # This is the "Max Speed" query you confirmed works.
+    SERVICE wikibase:around {
+        ?event wdt:P625 ?coords .
+        bd:serviceParam wikibase:center ?center_point .
+        bd:serviceParam wikibase:radius ?radius .
+    }
+    
+    # Filter the direct results by type.
+    ?event wdt:P31 ?eventType .
+    
+    # Get optional information and labels.
+    OPTIONAL { ?event wdt:P585|wdt:P580 ?date . }
+    OPTIONAL { ?event wdt:P18 ?image . }
+    SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],nl,en". }
+    }
+    # Sort from oldest to newest.
+    ORDER BY ASC(?date)
+    # Limit to 5 results.
+    LIMIT 5
+    `; 
+    const endpointUrl = 'https://query.wikidata.org/sparql';
+    const headers = {
+        'Accept': 'application/sparql-results+json'
+    };
+    const params = {
+        query: query,
+        format: 'json'
+    };
+    const url = endpointUrl + '?' + new URLSearchParams(params).toString();
+    fetch(url, {headers})
+        .then(response => response.json())
+        .then(data => {
+            console.log(data);
+            if (data.results.bindings.length > 0 ) {
+                var title = data.results.bindings[0]
+                alert(title.eventLabel.value);
+                var sidebar = document.getElementById("sidebar_container")
+                child1 = document.createElement("h1")
+                child1.textContent = title.eventLabel.value
+                sidebar.appendChild(child1)
+                return title
+
+            }  else {
+                alert('No results found')
+            }
+        })
+        .catch(error => {
+            console.log('Error:', error);
+            alert('Failed to fetch data from wikidata')
+        })
+   
+        
+
+
+    } else {
+        alert('Please enter valid coordinates in the format: latitude, longitude');
+    }
+}
+
+var map = L.map('map').setView([51.505, -0.09], 13);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+}).addTo(map);
+
+// On click event: //
+map.on('click', function(e) {
+    const lat = e.latlng.lat;
+    const lng = e.latlng.lng;
+    
+    // Update input field with clicked coordinates
+    document.getElementById('coordinates_input').value = `${lat}, ${lng}`;
+    result = submit_date(lat, lng);
+    // Add marker at clicked location
+    L.marker([lat, lng]).addTo(map);
+    
+    // Optional: Show popup with coordinates
+    L.popup()
+        .setLatLng(e.latlng)
+        .setContent(`Result: ${result.eventLabel.value}`)
+        .openOn(map);
+});
+
+</script>
+</body>
+</html>
